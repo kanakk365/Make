@@ -1,0 +1,1 @@
+{"root":["./src/constants.ts","./src/index.ts","./src/prompt.ts","./src/stripindents.ts","./src/controllers/chat.ts","./src/controllers/template.ts","./src/defaults/node.ts","./src/defaults/react.ts","./src/routes/chat.ts","./src/routes/template.ts"],"version":"5.8.3"}

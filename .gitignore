@@ -1,0 +1,40 @@
+# Node.js dependencies
+backend/node_modules/
+frontend/node_modules/
+
+# Logs
+backend/logs
+frontend/logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# dotenv environment variables
+backend/.env
+frontend/.env
+
+# Build directories
+backend/dist/
+frontend/dist/
+backend/build/
+frontend/build/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Optional: Ignore IDE/editor configs
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Optional: Ignore package-lock/yarn.lock if using a different package manager
+# Uncomment one of the below depending on your setup
+# backend/package-lock.json
+# frontend/package-lock.json
+# backend/yarn.lock
+# frontend/yarn.lock
