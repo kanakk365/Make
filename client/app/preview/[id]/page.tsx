@@ -69,7 +69,17 @@ export default function PreviewPage({
           <p className="mb-2">Loading...</p>
         </div>
       )}
-      {url && <iframe width={"100%"} height={"100%"} src={url} />}
+      {url && (
+        <div className="h-full w-full overflow-auto">
+          <iframe 
+            width="100%" 
+            height="100%" 
+            src={url}
+            className="min-h-full"
+            style={{ border: 'none' }}
+          />
+        </div>
+      )}
     </div>
   );
 }

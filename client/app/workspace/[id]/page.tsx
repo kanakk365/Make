@@ -361,6 +361,32 @@ export default function WorkspacePage() {
 
           const assistantResponse = stepsResponse.data.response;
 
+  
+          const newGenerationStepsData = parseXml(assistantResponse).map(
+            (x: Step) => ({
+              ...x,
+              id: x.id + Date.now(), 
+              status: "in-progress" as const,
+              phase: "generation" as const,
+            })
+          );
+
+          console.log(
+            "Parsed new generation steps from AI edit:",
+            newGenerationStepsData
+          );
+          if (newGenerationStepsData.length > 0) {
+            setGenerationSteps((prev) => [...prev, ...newGenerationStepsData]);
+            setTimeout(() => {
+              setGenerationSteps((prev) =>
+                prev.map((step) => ({
+                  ...step,
+                  status: "completed" as const,
+                }))
+              );
+            }, 100);
+          }
+
           setLlmMessages((x) => [...x, newMessage]);
           setLlmMessages((x) => [
             ...x,

@@ -31,7 +31,7 @@ export const chatWithLlm = async (req: Request, res: Response) => {
 
     const answer = response.content;
     console.log(response)
-
+    console.log(answer)
     res.json({
       response: answer,
       success: true,
