@@ -14,6 +14,7 @@ export interface Step {
   status: 'pending' | 'in-progress' | 'completed';
   code?: string;
   path?: string;
+  phase?: 'template' | 'generation';
 }
 
 export interface Project {

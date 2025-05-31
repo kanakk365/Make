@@ -16,7 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ChatMessage } from "@/components/chat-message";
 import { CodeEditor } from "@/components/code-editor";
 import { FileTree } from "@/components/file-tree";
-import { StepsDisplay } from "@/components/steps-display";
+// import { StepsDisplay } from "@/components/steps-display";
 import {
   ArrowLeft,
   Send,
@@ -28,6 +28,8 @@ import {
 import Link from "next/link";
 import { Step, FileItem, StepType } from "@/lib/types";
 import { parseXml } from "@/lib/parse";
+import { useWebContainer } from "@/app/hooks/useWebContainer";
+import PreviewPage from "@/app/preview/[id]/page";
 
 interface Message {
   id: string;
@@ -40,13 +42,15 @@ export default function WorkspacePage() {
   const searchParams = useSearchParams();
   const id = params?.id as string;
   const initialMessage = searchParams.get("message");
-
-  const [activeTab, setActiveTab] = useState("preview");
+  const webcontainer = useWebContainer();
+  const [activeTab, setActiveTab] = useState("code");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState("");
-  const [steps, setSteps] = useState<Step[]>([]);
+  // const [steps, setSteps] = useState<Step[]>([]);
+  const [templateSteps, setTemplateSteps] = useState<Step[]>([]);
+  const [generationSteps, setGenerationSteps] = useState<Step[]>([]);
   const [files, setFiles] = useState<FileItem[]>([]);
   const [expandedFolders, setExpandedFolders] = useState<
     Record<string, boolean>
@@ -57,76 +61,135 @@ export default function WorkspacePage() {
     "/components": true,
   });
   const [templateSet, setTemplateSet] = useState(false);
-  const [llmMessages, setLlmMessages] = useState<{role: "user" | "assistant", content: string;}[]>([]);
+  const [initialSetupComplete, setInitialSetupComplete] = useState(false);
+  const [currentPhase, setCurrentPhase] = useState<
+    "template" | "generation" | "complete" | null
+  >(null);
+  const [llmMessages, setLlmMessages] = useState<
+    { role: "user" | "assistant"; content: string }[]
+  >([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    let originalFiles = [...files];
-    let updateHappened = false;
-    steps.filter(({status}) => status === "pending").map(step => {
-      updateHappened = true;
-      if (step?.type === StepType.CreateFile) {
-        let parsedPath = step.path?.split("/") ?? []; // ["src", "components", "App.tsx"]
-        let currentFileStructure = [...originalFiles]; 
-        const finalAnswerRef = currentFileStructure;
+    const processStepsToFiles = () => {
+      // Process all steps (both template and generation phases)
+      const allSteps = [...templateSteps, ...generationSteps];
 
-        let currentFolder = ""
-        while(parsedPath.length) {
-          currentFolder =  `${currentFolder}/${parsedPath[0]}`;
-          const currentFolderName = parsedPath[0];
-          parsedPath = parsedPath.slice(1);
+      if (allSteps.length === 0) return;
 
-          if (!parsedPath.length) {
-            // final file
-            const file = currentFileStructure.find(x => x.path === currentFolder)
-            if (!file) {
-              currentFileStructure.push({
-                name: currentFolderName,
-                type: 'file',
-                path: currentFolder,
-                content: step.code
-              })
+      const newFiles: FileItem[] = [];
+
+      allSteps
+        .filter(({ type }) => type === StepType.CreateFile)
+        .forEach((step) => {
+          let parsedPath = step.path?.split("/") ?? []; // ["src", "components", "App.tsx"]
+          let currentFileStructure = newFiles;
+
+          let currentFolder = "";
+          while (parsedPath.length) {
+            currentFolder = `${currentFolder}/${parsedPath[0]}`;
+            const currentFolderName = parsedPath[0];
+            parsedPath = parsedPath.slice(1);
+
+            if (!parsedPath.length) {
+              // final file
+              const existingFile = currentFileStructure.find(
+                (x) => x.path === currentFolder
+              );
+              if (!existingFile) {
+                currentFileStructure.push({
+                  name: currentFolderName,
+                  type: "file",
+                  path: currentFolder,
+                  content: step.code || "",
+                });
+              } else {
+                existingFile.content = step.code || "";
+              }
             } else {
-              file.content = step.code;
-            }
-          } else {
-            /// in a folder
-            const folder = currentFileStructure.find(x => x.path === currentFolder)
-            if (!folder) {
-              // create the folder
-              currentFileStructure.push({
-                name: currentFolderName,
-                type: 'folder',
-                path: currentFolder,
-                children: []
-              })
-            }
+              /// in a folder
+              let folder = currentFileStructure.find(
+                (x) => x.path === currentFolder
+              );
+              if (!folder) {
+                // create the folder
+                folder = {
+                  name: currentFolderName,
+                  type: "folder",
+                  path: currentFolder,
+                  children: [],
+                };
+                currentFileStructure.push(folder);
+              }
 
-            currentFileStructure = currentFileStructure.find(x => x.path === currentFolder)!.children!;
+              currentFileStructure = folder.children!;
+            }
           }
-        }
-        originalFiles = finalAnswerRef;
+        });
+
+      if (newFiles.length > 0) {
+        setFiles(newFiles);
+        console.log("Files updated:", newFiles);
       }
+    };
 
-    })
-
-    if (updateHappened) {
-
-      setFiles(originalFiles)
-      setSteps(steps => steps.map((s: Step) => {
-        return {
-          ...s,
-          status: "completed"
-        }
-        
-      }))
-    }
-    console.log(files);
-  }, [steps, files]);
+    processStepsToFiles();
+  }, [templateSteps, generationSteps]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    const createMountStructure = (files: FileItem[]) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mountStructure: Record<string, any> = {};
+
+      const processFile = (file: FileItem, isRootFolder: boolean) => {
+        if (file.type === "folder") {
+          // For folders, create a directory entry
+          mountStructure[file.name] = {
+            directory: file.children
+              ? Object.fromEntries(
+                  file.children.map((child) => [
+                    child.name,
+                    processFile(child, false),
+                  ])
+                )
+              : {},
+          };
+        } else if (file.type === "file") {
+          if (isRootFolder) {
+            mountStructure[file.name] = {
+              file: {
+                contents: file.content || "",
+              },
+            };
+          } else {
+            // For files, create a file entry with contents
+            return {
+              file: {
+                contents: file.content || "",
+              },
+            };
+          }
+        }
+
+        return mountStructure[file.name];
+      };
+
+      // Process each top-level file/folder
+      files.forEach((file) => processFile(file, true));
+
+      return mountStructure;
+    };
+
+    const mountStructure = createMountStructure(files);
+
+    // Mount the structure if WebContainer is available
+    console.log(mountStructure);
+    webcontainer?.mount(mountStructure);
+  }, [files, webcontainer]);
 
   // Auto-select first file when files are available
   useEffect(() => {
@@ -151,96 +214,189 @@ export default function WorkspacePage() {
     }
   }, [files, selectedFile]);
 
-  const handleBackendCall = useCallback(async (message: string) => {
-    try {
-      setIsLoading(true);
+  const handleBackendCall = useCallback(
+    async (message: string) => {
+      try {
+        setIsLoading(true);
 
-      if (!templateSet) {
-        const response = await axios.post(`${BACKEND_URL}/template`, {
-          prompt: message.trim()
-        });
-        setTemplateSet(true);
-        
-        const { prompts, uiPrompts } = response.data;
-        console.log(prompts, uiPrompts)
+        if (!templateSet) {
+          // Initial setup phase
+          setCurrentPhase("template");
 
-        setSteps(parseXml(uiPrompts[0]).map((x: Step) => ({
-          ...x,
-          status: "pending"
-        })));
+          // Phase 1: Template Setup
+          const response = await axios.post(`${BACKEND_URL}/template`, {
+            prompt: message.trim(),
+          });
+          setTemplateSet(true);
 
-        const stepsResponse = await axios.post(`${BACKEND_URL}/chat`, {
-          messages: [...prompts, message].map(content => ({
+          const { prompts, uiPrompts } = response.data;
+          console.log(prompts, uiPrompts);
+
+          // Set template steps with loading status
+          const templateStepsData = parseXml(uiPrompts[0]).map((x: Step) => ({
+            ...x,
+            status: "in-progress" as const,
+            phase: "template" as const,
+          }));
+
+          console.log("Template steps data:", templateStepsData);
+          setTemplateSteps(templateStepsData);
+          // setSteps(templateStepsData);
+
+          // Complete template phase after a delay
+          setTimeout(() => {
+            setTemplateSteps((prev) =>
+              prev.map((step) => ({
+                ...step,
+                status: "completed" as const,
+              }))
+            );
+            setCurrentPhase("generation");
+          }, 1000);
+
+          // Phase 2: AI Generation
+          setTimeout(async () => {
+            try {
+              const stepsResponse = await axios.post(`${BACKEND_URL}/chat`, {
+                messages: [...prompts, message].map((content) => ({
+                  role: "user",
+                  content,
+                })),
+              });
+
+              const generationStepsData = parseXml(
+                stepsResponse.data.response
+              ).map((x) => ({
+                ...x,
+                status: "in-progress" as const,
+                phase: "generation" as const,
+              }));
+
+              console.log("Generation steps data:", generationStepsData);
+              setGenerationSteps(generationStepsData);
+              // setSteps((prev) => [...prev, ...generationStepsData]);
+
+              setLlmMessages(
+                [...prompts, message].map((content) => ({
+                  role: "user" as const,
+                  content,
+                }))
+              );
+
+              setLlmMessages((x) => [
+                ...x,
+                {
+                  role: "assistant" as const,
+                  content: stepsResponse.data.response,
+                },
+              ]);
+
+              // Complete generation phase
+              setTimeout(() => {
+                setGenerationSteps((prev) =>
+                  prev.map((step) => ({
+                    ...step,
+                    status: "completed" as const,
+                  }))
+                );
+                setCurrentPhase("complete");
+                setInitialSetupComplete(true);
+
+                console.log("Initial setup completed, clearing steps display");
+
+                // Add initial AI response after setup is complete
+                const aiSetupMessage: Message = {
+                  id: `assistant-setup-${Date.now()}`,
+                  role: "assistant",
+                  content:
+                    "Project setup completed! Your files have been generated and are ready for editing. You can now ask me questions or request modifications to your project.",
+                };
+                setMessages((prev) => [...prev, aiSetupMessage]);
+
+                // Clear steps display after setup is complete
+                setTimeout(() => {
+                  // setSteps([]);
+                }, 500);
+              }, 2000);
+            } catch (error) {
+              console.error("Error in generation phase:", error);
+              setCurrentPhase("complete");
+              setInitialSetupComplete(true);
+
+              // Clear steps on error too
+              setTimeout(() => {
+                // setSteps([]);
+              }, 500);
+            }
+          }, 1500);
+        } else {
+          // Subsequent chat messages - only user/AI conversation
+          const newMessage = {
+            role: "user" as const,
+            content: message,
+          };
+
+          // Add user message to chat immediately
+          const userMessage: Message = {
+            id: `user-${Date.now()}`,
             role: "user",
-            content
-          }))
-        });
+            content: message,
+          };
+          setMessages((prev) => [...prev, userMessage]);
 
-        setSteps(s => [...s, ...parseXml(stepsResponse.data.response).map(x => ({
-          ...x,
-          status: "pending" as const
-        }))]);
+          const stepsResponse = await axios.post(`${BACKEND_URL}/chat`, {
+            messages: [...llmMessages, newMessage],
+          });
 
-        setLlmMessages([...prompts, message].map(content => ({
-          role: "user" as const,
-          content
-        })));
+          const assistantResponse = stepsResponse.data.response;
 
-        setLlmMessages(x => [...x, { role: "assistant" as const, content: stepsResponse.data.response }]);
-      } else {
-        const newMessage = {
-          role: "user" as const,
-          content: message
+          setLlmMessages((x) => [...x, newMessage]);
+          setLlmMessages((x) => [
+            ...x,
+            {
+              role: "assistant" as const,
+              content: assistantResponse,
+            },
+          ]);
+
+          // Add AI response to chat
+          const assistantMessage: Message = {
+            id: `assistant-${Date.now()}`,
+            role: "assistant",
+            content: assistantResponse,
+          };
+          setMessages((prev) => [...prev, assistantMessage]);
+        }
+      } catch (error) {
+        console.error("Error calling backend:", error);
+
+        const errorMessage: Message = {
+          id: `error-${Date.now()}`,
+          role: "assistant",
+          content:
+            "Sorry, there was an error processing your request. Please try again.",
         };
-
-        const stepsResponse = await axios.post(`${BACKEND_URL}/chat`, {
-          messages: [...llmMessages, newMessage]
-        });
-
-        setLlmMessages(x => [...x, newMessage]);
-        setLlmMessages(x => [...x, {
-          role: "assistant" as const,
-          content: stepsResponse.data.response
-        }]);
-        
-        setSteps(s => [...s, ...parseXml(stepsResponse.data.response).map(x => ({
-          ...x,
-          status: "pending" as const
-        }))]);
+        setMessages((prev) => [...prev, errorMessage]);
+      } finally {
+        setIsLoading(false);
       }
-
-      const userMessage: Message = {
-        id: `user-${Date.now()}`,
-        role: "user",
-        content: message,
-      };
-
-      const assistantMessage: Message = {
-        id: `assistant-${Date.now()}`,
-        role: "assistant",
-        content: "I've processed your request. Let me work on this for you.",
-      };
-
-      setMessages((prev) => [...prev, userMessage, assistantMessage]);
-    } catch (error) {
-      console.error("Error calling backend:", error);
-
-      const errorMessage: Message = {
-        id: `error-${Date.now()}`,
-        role: "assistant",
-        content: "Sorry, there was an error processing your request. Please try again.",
-      };
-      setMessages((prev) => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [templateSet, llmMessages]);
+    },
+    [templateSet, llmMessages]
+  );
 
   useEffect(() => {
-    if (initialMessage && !templateSet) {
+    if (initialMessage && !templateSet && messages.length === 0) {
+      // Add initial message to chat first
+      const userMessage: Message = {
+        id: `user-initial-${Date.now()}`,
+        role: "user",
+        content: initialMessage,
+      };
+      setMessages([userMessage]);
+
       handleBackendCall(initialMessage);
     }
-  }, [initialMessage, handleBackendCall, templateSet]);
+  }, [initialMessage, handleBackendCall, templateSet, messages.length]);
 
   const handleSendMessage = () => {
     if (!input.trim()) return;
@@ -299,7 +455,7 @@ export default function WorkspacePage() {
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
-              className="gap-2 border-[#1a1a1c] bg-[#0f0f10] text-white hover:bg-[#1a1a1c]"
+              // className="gap-2 border-[#1a1a1c] bg-[#0f0f10] text-white hover:bg-[#1a1a1c]"
             >
               <RefreshCw className="h-4 w-4" />
               Regenerate
@@ -340,16 +496,42 @@ export default function WorkspacePage() {
               <ScrollArea className="flex-1 p-4 max-h-full overflow-auto">
                 <div className="space-y-4">
                   {messages.map((message) => (
-                    <ChatMessage key={message.id} message={message} />
+                    <ChatMessage
+                      key={message.id}
+                      message={message}
+                      templateSteps={[]}
+                      generationSteps={[]}
+                      currentPhase={currentPhase}
+                    />
                   ))}
-                  {steps.length > 0 && (
-                    <div className="mt-6">
-                      <h3 className="text-sm font-medium text-gray-400 mb-3">
-                        Project Steps
-                      </h3>
-                      <StepsDisplay steps={steps} />
+                  {/* Hide steps display - commented out for now */}
+                  {/* {!initialSetupComplete &&
+                    (templateSteps.length > 0 ||
+                      generationSteps.length > 0) && (
+                      <div className="mt-6">
+                        <h3 className="text-sm font-medium text-gray-400 mb-3">
+                          Project Progress
+                        </h3>
+                        <StepsDisplay
+                          steps={steps}
+                          templateSteps={templateSteps}
+                          generationSteps={generationSteps}
+                          initialSetupComplete={initialSetupComplete}
+                          currentPhase={currentPhase}
+                        />
+                      </div>
+                    )} */}
+                  
+                  {/* Show loading indicator when AI is processing */}
+                  {isLoading && !initialSetupComplete && (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="flex items-center gap-3 text-gray-400">
+                        <RefreshCw className="h-5 w-5 animate-spin" />
+                        <span className="text-sm">Setting up your project...</span>
+                      </div>
                     </div>
                   )}
+                  
                   <div ref={chatEndRef} />
                 </div>
               </ScrollArea>
@@ -414,7 +596,13 @@ export default function WorkspacePage() {
               </div>
 
               <TabsContent value="preview" className="flex-1 p-0 m-0">
-                hello
+                {webcontainer ? (
+                  <PreviewPage webContainer={webcontainer} files={files} />
+                ) : (
+                  <div className="flex items-center justify-center h-full">
+                    <p className="text-gray-400">Loading web container...</p>
+                  </div>
+                )}
               </TabsContent>
 
               <TabsContent value="code" className="flex-1 p-0 m-0 border-0">
@@ -443,12 +631,16 @@ export default function WorkspacePage() {
                     )}
                     <div className="flex-1">
                       <CodeEditor
-                        file={selectedFile ? {
-                          name: selectedFile.split('/').pop() || '',
-                          type: 'file',
-                          path: selectedFile,
-                          content: getFileContent(selectedFile)
-                        } : null}
+                        file={
+                          selectedFile
+                            ? {
+                                name: selectedFile.split("/").pop() || "",
+                                type: "file",
+                                path: selectedFile,
+                                content: getFileContent(selectedFile),
+                              }
+                            : null
+                        }
                       />
                     </div>
                   </div>

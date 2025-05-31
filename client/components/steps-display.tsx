@@ -1,10 +1,16 @@
-import React from 'react';
-import { Check, Clock, Play, FileText, FolderOpen, Terminal, Edit, Trash2 } from 'lucide-react';
+"use client"
+
+import { useState, useEffect } from 'react';
+import { Check, Clock, ChevronDown, FileText, FolderOpen, Terminal, Edit, Trash2 } from 'lucide-react';
 import { Step, StepType } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 interface StepsDisplayProps {
   steps: Step[];
+  templateSteps?: Step[];
+  generationSteps?: Step[];
+  initialSetupComplete?: boolean;
+  currentPhase?: "template" | "generation" | "complete" | null;
 }
 
 const getStepIcon = (type: StepType) => {
@@ -24,122 +30,201 @@ const getStepIcon = (type: StepType) => {
   }
 };
 
-const getStatusIcon = (status: string) => {
-  switch (status) {
-    case 'completed':
-      return Check;
-    case 'in-progress':
-      return Play;
-    case 'pending':
-    default:
-      return Clock;
-  }
-};
-
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case 'completed':
-      return 'text-green-500';
-    case 'in-progress':
-      return 'text-blue-500';
-    case 'pending':
-    default:
-      return 'text-gray-400';
-  }
-};
-
-export function StepsDisplay({ steps }: StepsDisplayProps) {
-  if (!steps || steps.length === 0) {
+export function StepsDisplay({ 
+  steps, 
+  templateSteps = [], 
+  generationSteps = [], 
+  initialSetupComplete = false,
+  currentPhase = null 
+}: StepsDisplayProps) {
+  const [collapsed, setCollapsed] = useState(false);
+  
+  // Auto-collapse when initial setup is complete
+  useEffect(() => {
+    if (initialSetupComplete) {
+      setCollapsed(true);
+    }
+  }, [initialSetupComplete]);
+  
+  // Only show if we have template or generation steps to display
+  if ((templateSteps.length === 0 && generationSteps.length === 0) || 
+      (!steps || steps.length === 0)) {
     return null;
   }
 
+  const completedCount = steps.filter(s => s.status === 'completed').length;
+  const templateCompletedCount = templateSteps.filter(s => s.status === 'completed').length;
+  const generationCompletedCount = generationSteps.filter(s => s.status === 'completed').length;
+
   return (
-    <div className="bg-[#0f0f10] border border-[#1a1a1c] rounded-lg p-4 space-y-3">
-      <div className="flex items-center gap-2 text-sm font-medium text-white mb-3">
-        <Terminal className="w-4 h-4" />
-        Project Setup Steps
+    <div className="bg-zinc-950 border border-zinc-800 rounded-lg overflow-hidden">
+      <div
+        className="flex items-center px-6 py-4 border-b border-zinc-800 cursor-pointer"
+        onClick={() => setCollapsed(!collapsed)}
+      >
+        <ChevronDown 
+          className={cn(
+            "h-5 w-5 mr-2 text-white transition-transform", 
+            collapsed ? "-rotate-90" : ""
+          )} 
+        />
+        <h2 className="text-white font-medium text-lg">Project Setup Progress</h2>
+        <div className="ml-auto text-sm text-zinc-400">
+          {completedCount}/{steps.length} completed
+        </div>
       </div>
-      
-      <div className="space-y-2">
-        {steps.map((step, index) => {
-          const StepIcon = getStepIcon(step.type);
-          const StatusIcon = getStatusIcon(step.status);
-          const statusColor = getStatusColor(step.status);
-          
-          return (
-            <div
-              key={step.id}
-              className={cn(
-                "flex items-start gap-3 p-3 rounded-md transition-colors",
-                step.status === 'completed' ? 'bg-green-500/10' : 
-                step.status === 'in-progress' ? 'bg-blue-500/10' : 'bg-gray-500/10'
-              )}
-            >
-              {/* Step number */}
-              <div className={cn(
-                "flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium",
-                step.status === 'completed' ? 'bg-green-500 text-white' :
-                step.status === 'in-progress' ? 'bg-blue-500 text-white' : 'bg-gray-500 text-white'
-              )}>
-                {index + 1}
-              </div>
-              
-              {/* Step icon */}
-              <div className={cn("flex-shrink-0 mt-0.5", statusColor)}>
-                <StepIcon className="w-4 h-4" />
-              </div>
-              
-              {/* Step content */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <h4 className="text-sm font-medium text-white truncate">
-                    {step.title}
-                  </h4>
-                  <StatusIcon className={cn("w-4 h-4", statusColor)} />
-                </div>
-                
-                {step.description && (
-                  <p className="text-xs text-gray-400 mb-2">
-                    {step.description}
-                  </p>
+
+      {!collapsed && (
+        <div className="p-4 space-y-6">          {/* Template Setup Phase */}
+          {templateSteps.length > 0 && (
+            <div>
+              <div className="flex items-center mb-3">
+                {currentPhase === "template" ? (
+                  <div className="h-2 w-2 bg-blue-500 rounded-full mr-2 animate-pulse"></div>
+                ) : (
+                  <div className="h-2 w-2 bg-green-500 rounded-full mr-2"></div>
                 )}
-                
-                {step.path && (
-                  <p className="text-xs text-gray-500 font-mono">
-                    {step.path}
-                  </p>
-                )}
-                
-                {step.code && step.code.length > 0 && (
-                  <div className="mt-2 p-2 bg-black/30 rounded border border-gray-700">
-                    <pre className="text-xs text-gray-300 whitespace-pre-wrap overflow-x-auto">
-                      {step.code.length > 100 ? `${step.code.substring(0, 100)}...` : step.code}
-                    </pre>
+                <h3 className="text-white font-medium text-sm">Phase 1: Template Setup</h3>
+                {currentPhase === "template" && (
+                  <div className="ml-2">
+                    <div className="h-3 w-3 rounded-full border border-blue-500 border-t-transparent animate-spin"></div>
                   </div>
                 )}
+                <div className="ml-auto text-xs text-zinc-400">
+                  {templateCompletedCount}/{templateSteps.length}
+                </div>
+              </div>
+              <div className="space-y-2 ml-4">
+                {templateSteps.map((step) => {
+                  const IconComponent = getStepIcon(step.type);
+                  return (
+                    <div key={step.id} className="flex items-start">
+                      <div className="mt-1 mr-3">
+                        {step.status === 'in-progress' ? (
+                          <div className="h-4 w-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+                        ) : step.status === 'completed' ? (
+                          <div className="h-4 w-4 rounded-full bg-green-500 flex items-center justify-center">
+                            <Check className="h-2.5 w-2.5 text-white" />
+                          </div>
+                        ) : (
+                          <div className="h-4 w-4 rounded-full bg-zinc-700/50 flex items-center justify-center">
+                            <Clock className="h-2.5 w-2.5 text-zinc-400" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center">
+                          <IconComponent className="h-3.5 w-3.5 mr-2 text-zinc-400" />
+                          <span className={cn(
+                            "text-xs",
+                            step.status === 'in-progress' ? "text-blue-400" : 
+                            step.status === 'completed' ? "text-zinc-300" : "text-zinc-400"
+                          )}>
+                            {step.title}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
-          );
-        })}
-      </div>
-      
-      {/* Progress indicator */}
-      <div className="mt-4 pt-3 border-t border-gray-700">
-        <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
-          <span>Progress</span>
-          <span>
-            {steps.filter(s => s.status === 'completed').length} / {steps.length} completed
-          </span>
+          )}          {/* AI Generation Phase */}
+          {generationSteps.length > 0 && (
+            <div>
+              <div className="flex items-center mb-3">
+                {currentPhase === "generation" ? (
+                  <div className="h-2 w-2 bg-purple-500 rounded-full mr-2 animate-pulse"></div>
+                ) : currentPhase === "complete" ? (
+                  <div className="h-2 w-2 bg-green-500 rounded-full mr-2"></div>
+                ) : (
+                  <div className="h-2 w-2 bg-zinc-600 rounded-full mr-2"></div>
+                )}
+                <h3 className="text-white font-medium text-sm">Phase 2: AI Code Generation</h3>
+                {currentPhase === "generation" && (
+                  <div className="ml-2">
+                    <div className="h-3 w-3 rounded-full border border-purple-500 border-t-transparent animate-spin"></div>
+                  </div>
+                )}
+                <div className="ml-auto text-xs text-zinc-400">
+                  {generationCompletedCount}/{generationSteps.length}
+                </div>
+              </div>
+              <div className="space-y-2 ml-4">
+                {generationSteps.map((step) => {
+                  const IconComponent = getStepIcon(step.type);
+                  return (
+                    <div key={step.id} className="flex items-start">
+                      <div className="mt-1 mr-3">
+                        {step.status === 'in-progress' ? (
+                          <div className="h-4 w-4 rounded-full border-2 border-purple-500 border-t-transparent animate-spin" />
+                        ) : step.status === 'completed' ? (
+                          <div className="h-4 w-4 rounded-full bg-green-500 flex items-center justify-center">
+                            <Check className="h-2.5 w-2.5 text-white" />
+                          </div>
+                        ) : (
+                          <div className="h-4 w-4 rounded-full bg-zinc-700/50 flex items-center justify-center">
+                            <Clock className="h-2.5 w-2.5 text-zinc-400" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center">
+                          <IconComponent className="h-3.5 w-3.5 mr-2 text-zinc-400" />
+                          <span className={cn(
+                            "text-xs",
+                            step.status === 'in-progress' ? "text-purple-400" : 
+                            step.status === 'completed' ? "text-zinc-300" : "text-zinc-400"
+                          )}>
+                            {step.title}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Fallback: Show all steps if phases are not separated */}
+          {templateSteps.length === 0 && generationSteps.length === 0 && (
+            <div className="space-y-3">
+              {steps.map((step) => {
+                const IconComponent = getStepIcon(step.type);
+                return (
+                  <div key={step.id} className="flex items-start">
+                    <div className="mt-1 mr-3">
+                      {step.status === 'in-progress' ? (
+                        <div className="h-5 w-5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+                      ) : step.status === 'completed' ? (
+                        <div className="h-5 w-5 rounded-full flex items-center justify-center">
+                          <Check className="h-3.5 w-3.5 text-gray-300" />
+                        </div>
+                      ) : (
+                        <div className="h-5 w-5 rounded-full bg-zinc-700/50 flex items-center justify-center">
+                          <Clock className="h-3.5 w-3.5 text-zinc-400" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center">
+                        <IconComponent className="h-4 w-4 mr-2 text-zinc-400" />
+                        <span className={cn(
+                          "text-sm",
+                          step.status === 'in-progress' ? "text-blue-500" : "text-white"
+                        )}>
+                          {step.title}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
-        <div className="w-full bg-gray-700 rounded-full h-2">
-          <div
-            className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-            style={{
-              width: `${(steps.filter(s => s.status === 'completed').length / steps.length) * 100}%`
-            }}
-          />
-        </div>
-      </div>
+      )}
     </div>
   );
 }

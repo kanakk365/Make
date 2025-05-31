@@ -10,9 +10,12 @@ interface ChatMessageProps {
     content: string
     steps?: Step[]
   }
+  templateSteps?: Step[]
+  generationSteps?: Step[]
+  currentPhase?: "template" | "generation" | "complete" | null
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
+export function ChatMessage({ message, templateSteps = [], generationSteps = [], currentPhase = null }: ChatMessageProps) {
   return (
     <div className={cn("flex items-start gap-4 text-sm", message.role === "user" ? "flex-row-reverse" : "")}>
       <Avatar className={cn("h-8 w-8", message.role === "user" ? "bg-violet-600" : "bg-cyan-600")}>
@@ -25,11 +28,16 @@ export function ChatMessage({ message }: ChatMessageProps) {
         )}
       >
         <p className="whitespace-pre-wrap">{message.content}</p>
-        {message.steps && message.steps.length > 0 && (
+        {(message.steps && message.steps.length > 0) || (currentPhase && currentPhase !== "complete" && (templateSteps.length > 0 || generationSteps.length > 0)) ? (
           <div className="mt-3">
-            <StepsDisplay steps={message.steps} />
+            <StepsDisplay 
+              steps={message.steps || []} 
+              templateSteps={templateSteps}
+              generationSteps={generationSteps}
+              currentPhase={currentPhase}
+            />
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   )
