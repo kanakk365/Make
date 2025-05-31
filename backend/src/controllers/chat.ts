@@ -30,7 +30,7 @@ export const chatWithLlm = async (req: Request, res: Response) => {
     const response = await model.invoke(allMessages);
 
     const answer = response.content;
-    console.log(answer);
+    console.log(response)
 
     res.json({
       response: answer,

@@ -7,6 +7,17 @@ interface CodeEditorProps {
 }
 
 export function CodeEditor({ file }: CodeEditorProps) {
+  const defineCustomTheme = (monaco: typeof import('monaco-editor')) => {
+    monaco.editor.defineTheme('custom-dark', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [],
+      colors: {
+        'editor.background': '#0f0f10',
+      }
+    });
+  };
+
   if (!file) {
     return (
       <div className="h-full flex items-center justify-center text-gray-400">
@@ -15,7 +26,6 @@ export function CodeEditor({ file }: CodeEditorProps) {
     );
   }
 
-  // Determine language based on file extension
   const getLanguage = (fileName: string): string => {
     const extension = fileName.split('.').pop()?.toLowerCase();
     switch (extension) {
@@ -75,8 +85,9 @@ export function CodeEditor({ file }: CodeEditorProps) {
     <Editor
       height="100%"
       defaultLanguage={getLanguage(file.name)}
-      theme="vs-dark"
+      theme="custom-dark"
       value={file.content || ''}
+      beforeMount={defineCustomTheme}
       options={{
         readOnly: true,
         minimap: { enabled: false },

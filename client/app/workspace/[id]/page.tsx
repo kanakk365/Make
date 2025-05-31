@@ -16,7 +16,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { ChatMessage } from "@/components/chat-message";
 import { CodeEditor } from "@/components/code-editor";
 import { FileTree } from "@/components/file-tree";
-// import { StepsDisplay } from "@/components/steps-display";
 import {
   ArrowLeft,
   Send,
@@ -48,7 +47,6 @@ export default function WorkspacePage() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState("");
-  // const [steps, setSteps] = useState<Step[]>([]);
   const [templateSteps, setTemplateSteps] = useState<Step[]>([]);
   const [generationSteps, setGenerationSteps] = useState<Step[]>([]);
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -69,6 +67,7 @@ export default function WorkspacePage() {
     { role: "user" | "assistant"; content: string }[]
   >([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const initialApiCallTriggered = useRef(false);
 
   useEffect(() => {
     const processStepsToFiles = () => {
@@ -241,94 +240,98 @@ export default function WorkspacePage() {
 
           console.log("Template steps data:", templateStepsData);
           setTemplateSteps(templateStepsData);
-          // setSteps(templateStepsData);
 
-          // Complete template phase after a delay
-          setTimeout(() => {
-            setTemplateSteps((prev) =>
+          setTemplateSteps((prev) =>
+            prev.map((step) => ({
+              ...step,
+              status: "completed" as const,
+            }))
+          );
+          setCurrentPhase("generation");
+
+          // Phase 2: AI Generation
+          try {
+            // Add generating message for the initial setup
+            const generatingMessage: Message = {
+              id: `generating-setup-${Date.now()}`,
+              role: "assistant",
+              content: "Generating edits...",
+            };
+            console.log("set");
+            setMessages((prev) => [...prev, generatingMessage]);
+
+            const stepsResponse = await axios.post(`${BACKEND_URL}/chat`, {
+              messages: [...prompts, message].map((content) => ({
+                role: "user",
+                content,
+              })),
+            });
+
+            const generationStepsData = parseXml(
+              stepsResponse.data.response
+            ).map((x) => ({
+              ...x,
+              status: "in-progress" as const,
+              phase: "generation" as const,
+            }));
+
+            console.log("Generation steps data:", generationStepsData);
+            setGenerationSteps(generationStepsData);
+
+            setLlmMessages(
+              [...prompts, message].map((content) => ({
+                role: "user" as const,
+                content,
+              }))
+            );
+
+            setLlmMessages((x) => [
+              ...x,
+              {
+                role: "assistant" as const,
+                content: stepsResponse.data.response,
+              },
+            ]);
+
+            // Complete generation phase
+            setGenerationSteps((prev) =>
               prev.map((step) => ({
                 ...step,
                 status: "completed" as const,
               }))
             );
-            setCurrentPhase("generation");
-          }, 1000);
+            setCurrentPhase("complete");
+            setInitialSetupComplete(true);
 
-          // Phase 2: AI Generation
-          setTimeout(async () => {
-            try {
-              const stepsResponse = await axios.post(`${BACKEND_URL}/chat`, {
-                messages: [...prompts, message].map((content) => ({
-                  role: "user",
-                  content,
-                })),
-              });
+            console.log("Initial setup completed, clearing steps display");
 
-              const generationStepsData = parseXml(
-                stepsResponse.data.response
-              ).map((x) => ({
-                ...x,
-                status: "in-progress" as const,
-                phase: "generation" as const,
-              }));
-
-              console.log("Generation steps data:", generationStepsData);
-              setGenerationSteps(generationStepsData);
-              // setSteps((prev) => [...prev, ...generationStepsData]);
-
-              setLlmMessages(
-                [...prompts, message].map((content) => ({
-                  role: "user" as const,
-                  content,
-                }))
+            // Extract title from first boltArtifact for the AI response
+            const extractArtifactTitle = (content: string): string => {
+              const match = content.match(
+                /<boltArtifact[^>]*title="([^"]*)"[^>]*>/
               );
+              return match
+                ? match[1]
+                : "Project setup completed! Your files have been generated and are ready for editing.";
+            };
 
-              setLlmMessages((x) => [
-                ...x,
-                {
-                  role: "assistant" as const,
-                  content: stepsResponse.data.response,
-                },
-              ]);
+            const aiResponseContent = extractArtifactTitle(
+              stepsResponse.data.response
+            );
 
-              // Complete generation phase
-              setTimeout(() => {
-                setGenerationSteps((prev) =>
-                  prev.map((step) => ({
-                    ...step,
-                    status: "completed" as const,
-                  }))
-                );
-                setCurrentPhase("complete");
-                setInitialSetupComplete(true);
-
-                console.log("Initial setup completed, clearing steps display");
-
-                // Add initial AI response after setup is complete
-                const aiSetupMessage: Message = {
-                  id: `assistant-setup-${Date.now()}`,
-                  role: "assistant",
-                  content:
-                    "Project setup completed! Your files have been generated and are ready for editing. You can now ask me questions or request modifications to your project.",
-                };
-                setMessages((prev) => [...prev, aiSetupMessage]);
-
-                // Clear steps display after setup is complete
-                setTimeout(() => {
-                  // setSteps([]);
-                }, 500);
-              }, 2000);
-            } catch (error) {
-              console.error("Error in generation phase:", error);
-              setCurrentPhase("complete");
-              setInitialSetupComplete(true);
-
-              // Clear steps on error too
-              setTimeout(() => {
-                // setSteps([]);
-              }, 500);
-            }
-          }, 1500);
+            // Replace the generating message with the actual AI response
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.content === "Generating edits..."
+                  ? { ...msg, content: aiResponseContent }
+                  : msg
+              )
+            );
+          } catch (error) {
+            console.error("Error in generation phase:", error);
+            setCurrentPhase("complete");
+            setInitialSetupComplete(true);
+          }
         } else {
           // Subsequent chat messages - only user/AI conversation
           const newMessage = {
@@ -343,6 +346,14 @@ export default function WorkspacePage() {
             content: message,
           };
           setMessages((prev) => [...prev, userMessage]);
+
+          // Add temporary "generating" message
+          const generatingMessage: Message = {
+            id: `generating-${Date.now()}`,
+            role: "assistant",
+            content: "Generating edits...",
+          };
+          setMessages((prev) => [...prev, generatingMessage]);
 
           const stepsResponse = await axios.post(`${BACKEND_URL}/chat`, {
             messages: [...llmMessages, newMessage],
@@ -359,13 +370,24 @@ export default function WorkspacePage() {
             },
           ]);
 
-          // Add AI response to chat
-          const assistantMessage: Message = {
-            id: `assistant-${Date.now()}`,
-            role: "assistant",
-            content: assistantResponse,
+          // Extract title from first boltArtifact for the AI response
+          const extractArtifactTitle = (content: string): string => {
+            const match = content.match(
+              /<boltArtifact[^>]*title="([^"]*)"[^>]*>/
+            );
+            return match ? match[1] : content;
           };
-          setMessages((prev) => [...prev, assistantMessage]);
+
+          const displayContent = extractArtifactTitle(assistantResponse);
+
+          // Replace the generating message with the actual AI response
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.content === "Generating edits..."
+                ? { ...msg, content: displayContent }
+                : msg
+            )
+          );
         }
       } catch (error) {
         console.error("Error calling backend:", error);
@@ -385,18 +407,48 @@ export default function WorkspacePage() {
   );
 
   useEffect(() => {
-    if (initialMessage && !templateSet && messages.length === 0) {
-      // Add initial message to chat first
+    console.log(
+      "Initial setup useEffect. initialMessage:",
+      !!initialMessage,
+      "templateSet:",
+      templateSet,
+      "initialApiCallTriggered.current:",
+      initialApiCallTriggered.current
+    );
+
+    // Only proceed if there's an initial message, the template isn't set,
+    // and this specific trigger logic hasn't run yet.
+    if (initialMessage && !templateSet && !initialApiCallTriggered.current) {
+      console.log(
+        "Initial setup useEffect: Condition MET. Triggering initial call."
+      );
+      initialApiCallTriggered.current = true; // Mark that we are triggering the call
+
       const userMessage: Message = {
         id: `user-initial-${Date.now()}`,
         role: "user",
         content: initialMessage,
       };
-      setMessages([userMessage]);
-
-      handleBackendCall(initialMessage);
+      setMessages([userMessage]); // Add user message
+      handleBackendCall(initialMessage); // Call backend
+    } else {
+      console.log(
+        "Initial setup useEffect: Condition NOT MET or already triggered."
+      );
+      if (!initialMessage) console.log("Reason: No initialMessage");
+      if (templateSet) console.log("Reason: templateSet is true");
+      if (
+        initialApiCallTriggered.current &&
+        !(initialMessage && !templateSet)
+      ) {
+        // This log is for when the effect runs again after the initial trigger,
+        // and the main conditions (initialMessage && !templateSet) are no longer met.
+        console.log(
+          "Reason: Initial call already triggered and conditions no longer meet for a new trigger."
+        );
+      }
     }
-  }, [initialMessage, handleBackendCall, templateSet, messages.length]);
+  }, [initialMessage, templateSet, handleBackendCall]);
 
   const handleSendMessage = () => {
     if (!input.trim()) return;
@@ -437,44 +489,54 @@ export default function WorkspacePage() {
 
   return (
     <div className="flex flex-col h-screen bg-[#0a0a0a]">
-      <header className="border-b border-[#1a1a1c] bg-[#0f0f10]/80 backdrop-blur-md">
-        <div className="container flex h-14 items-center justify-between">
+      <header className="border-b border-gray-800 bg-[#0f0f10]">
+        <div className="flex h-16 items-center justify-between px-6">
           <div className="flex items-center gap-4">
             <Link href="/">
               <Button
                 variant="ghost"
                 size="icon"
-                className="text-gray-400 hover:text-white"
+                className="text-gray-400 hover:text-white hover:bg-[#0a0a0a] h-9 w-9"
               >
-                <ArrowLeft className="h-5 w-5" />
+                <ArrowLeft className="h-4 w-4" />
                 <span className="sr-only">Back to home</span>
               </Button>
             </Link>
-            <h1 className="text-lg font-medium text-white">Project: {id}</h1>
+            <div className="h-6 w-px bg-gray-700" />
+            <h1 className="text-lg font-semibold text-white tracking-tight">
+              {id}
+            </h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <Button
-              variant="outline"
-              // className="gap-2 border-[#1a1a1c] bg-[#0f0f10] text-white hover:bg-[#1a1a1c]"
+              variant="ghost"
+              size="sm"
+              className="gap-2 text-gray-400 hover:text-white hover:bg-[#0a0a0a]"
             >
               <RefreshCw className="h-4 w-4" />
               Regenerate
             </Button>
             <Button
-              variant="outline"
-              className="gap-2 border-[#1a1a1c] bg-[#0f0f10] text-white hover:bg-[#1a1a1c]"
+              variant="ghost"
+              size="sm"
+              className="gap-2 text-gray-400 hover:text-white hover:bg-[#0a0a0a]"
             >
               <Download className="h-4 w-4" />
               Download
             </Button>
             <Button
-              variant="outline"
-              className="gap-2 border-[#1a1a1c] bg-[#0f0f10] text-white hover:bg-[#1a1a1c]"
+              variant="ghost"
+              size="sm"
+              className="gap-2 text-gray-400 hover:text-white hover:bg-[#0a0a0a]"
             >
               <Github className="h-4 w-4" />
               GitHub
             </Button>
-            <Button className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 hover:from-violet-700 hover:to-cyan-600 border-0">
+            <div className="h-6 w-px bg-gray-700" />
+            <Button 
+              size="sm"
+              className="gap-2 bg-white text-black hover:bg-gray-200 font-medium"
+            >
               <ExternalLink className="h-4 w-4" />
               Deploy
             </Button>
@@ -484,15 +546,8 @@ export default function WorkspacePage() {
 
       <div className="flex-1 overflow-hidden">
         <ResizablePanelGroup direction="horizontal">
-          <ResizablePanel defaultSize={40} minSize={30}>
-            <div className="flex flex-col h-full border-r border-[#1a1a1c]">
-              <div className="p-4 border-b border-[#1a1a1c] flex-shrink-0">
-                <h2 className="text-lg font-medium text-white mb-1">AI Chat</h2>
-                <p className="text-sm text-gray-400">
-                  Ask the AI to modify your website or help with code
-                </p>
-              </div>
-
+          <ResizablePanel defaultSize={30} minSize={20}>
+            <div className="flex flex-col h-full border-r border-gray-800 bg-[#0f0f10]">
               <ScrollArea className="flex-1 p-4 max-h-full overflow-auto">
                 <div className="space-y-4">
                   {messages.map((message) => (
@@ -504,43 +559,27 @@ export default function WorkspacePage() {
                       currentPhase={currentPhase}
                     />
                   ))}
-                  {/* Hide steps display - commented out for now */}
-                  {/* {!initialSetupComplete &&
-                    (templateSteps.length > 0 ||
-                      generationSteps.length > 0) && (
-                      <div className="mt-6">
-                        <h3 className="text-sm font-medium text-gray-400 mb-3">
-                          Project Progress
-                        </h3>
-                        <StepsDisplay
-                          steps={steps}
-                          templateSteps={templateSteps}
-                          generationSteps={generationSteps}
-                          initialSetupComplete={initialSetupComplete}
-                          currentPhase={currentPhase}
-                        />
-                      </div>
-                    )} */}
-                  
+
                   {/* Show loading indicator when AI is processing */}
                   {isLoading && !initialSetupComplete && (
                     <div className="flex items-center justify-center py-8">
                       <div className="flex items-center gap-3 text-gray-400">
                         <RefreshCw className="h-5 w-5 animate-spin" />
-                        <span className="text-sm">Setting up your project...</span>
+                        <span className="text-sm">
+                          Setting up your project...
+                        </span>
                       </div>
                     </div>
                   )}
-                  
+
                   <div ref={chatEndRef} />
                 </div>
               </ScrollArea>
-
-              <div className="p-4 border-t border-[#1a1a1c] flex-shrink-0">
+              <div className="p-4 border-t border-gray-800 flex-shrink-0 bg-[#0f0f10]">
                 <div className="relative">
                   <Textarea
                     placeholder="Type your message..."
-                    className="min-h-24 bg-[#0f0f10] border-[#1a1a1c] rounded-xl resize-none text-white placeholder:text-gray-500 pr-12"
+                    className="min-h-24 bg-[#0a0a0a] border-gray-700 rounded-xl resize-none text-white placeholder:text-gray-500 pr-12 focus:border-gray-600"
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => {
@@ -552,7 +591,7 @@ export default function WorkspacePage() {
                   />
                   <Button
                     size="icon"
-                    className="absolute bottom-3 right-3 h-8 w-8 bg-gradient-to-r from-violet-600 to-cyan-500 hover:from-violet-700 hover:to-cyan-600 border-0 rounded-lg"
+                    className="absolute bottom-3 right-3 h-8 w-8 bg-white text-black hover:bg-gray-200 rounded-lg"
                     onClick={handleSendMessage}
                     disabled={isLoading || !input.trim()}
                   >
@@ -572,23 +611,23 @@ export default function WorkspacePage() {
 
           <ResizableHandle withHandle />
 
-          <ResizablePanel defaultSize={60}>
+          <ResizablePanel defaultSize={100}>
             <Tabs
               value={activeTab}
               onValueChange={setActiveTab}
-              className="h-full flex flex-col"
+              className="h-full flex flex-col bg-[#0a0a0a]"
             >
-              <div className="border-b border-[#1a1a1c] px-4">
+              <div className="border-b border-gray-800 px-4 bg-[#0f0f10]">
                 <TabsList className="h-14 bg-transparent">
                   <TabsTrigger
                     value="preview"
-                    className="data-[state=active]:bg-[#1a1a1c] data-[state=active]:text-white"
+                    className="data-[state=active]:bg-[#0a0a0a] data-[state=active]:text-white text-gray-400 hover:text-white"
                   >
                     Preview
                   </TabsTrigger>
                   <TabsTrigger
                     value="code"
-                    className="data-[state=active]:bg-[#1a1a1c] data-[state=active]:text-white"
+                    className="data-[state=active]:bg-[#0a0a0a] data-[state=active]:text-white text-gray-400 hover:text-white"
                   >
                     Code
                   </TabsTrigger>
@@ -599,7 +638,7 @@ export default function WorkspacePage() {
                 {webcontainer ? (
                   <PreviewPage webContainer={webcontainer} files={files} />
                 ) : (
-                  <div className="flex items-center justify-center h-full">
+                  <div className="flex items-center justify-center h-full bg-[#0a0a0a]">
                     <p className="text-gray-400">Loading web container...</p>
                   </div>
                 )}
@@ -607,8 +646,8 @@ export default function WorkspacePage() {
 
               <TabsContent value="code" className="flex-1 p-0 m-0 border-0">
                 <div className="flex h-full">
-                  <div className="w-64 border-r border-[#1a1a1c] bg-[#0f0f10] overflow-auto">
-                    <div className="p-4 border-b border-[#1a1a1c]">
+                  <div className="w-64 border-r border-gray-800 bg-[#0f0f10] overflow-auto">
+                    <div className="p-4 border-b border-gray-800">
                       <h3 className="font-medium text-white">Files</h3>
                     </div>
                     <FileTree
@@ -621,9 +660,9 @@ export default function WorkspacePage() {
                       onToggleFolder={toggleFolder}
                     />
                   </div>
-                  <div className="flex-1 flex flex-col">
+                  <div className="flex-1 flex flex-col bg-[#0a0a0a]">
                     {selectedFile && (
-                      <div className="p-4 border-b border-[#1a1a1c] bg-[#0f0f10]/30 flex items-center">
+                      <div className="p-4 border-b border-gray-800 bg-[#0f0f10] flex items-center">
                         <span className="text-gray-400 text-sm">
                           {selectedFile}
                         </span>
