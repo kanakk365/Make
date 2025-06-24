@@ -2,34 +2,11 @@
 
 import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { CodeEditor } from "@/components/code-editor"
 import { FileViewerProps } from "@/lib/types"
 
 export function FileViewer({ file, onClose }: FileViewerProps) {
   if (!file) return null
-
-  const getLanguage = (fileName: string) => {
-    if (fileName.endsWith(".tsx") || fileName.endsWith(".ts")) {
-      return "typescript"
-    }
-    if (fileName.endsWith(".jsx") || fileName.endsWith(".js")) {
-      return "javascript"
-    }
-    if (fileName.endsWith(".css")) {
-      return "css"
-    }
-    if (fileName.endsWith(".html")) {
-      return "html"
-    }
-    if (fileName.endsWith(".json")) {
-      return "json"
-    }
-    if (fileName.endsWith(".md")) {
-      return "markdown"
-    }
-    return "text"
-  }
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -48,9 +25,7 @@ export function FileViewer({ file, onClose }: FileViewerProps) {
           >
             <X className="h-4 w-4" />
           </Button>
-        </div>
-
-        {/* Content */}
+        </div>        {/* Content */}
         <div className="flex-1 overflow-hidden">
           {file.type === "folder" ? (
             <div className="flex items-center justify-center h-full text-gray-400">
@@ -58,8 +33,7 @@ export function FileViewer({ file, onClose }: FileViewerProps) {
             </div>
           ) : (
             <CodeEditor
-              language={getLanguage(file.name)}
-              value={file.content || `// Content for ${file.name}`}
+              file={file}
             />
           )}
         </div>
