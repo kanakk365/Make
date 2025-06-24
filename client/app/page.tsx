@@ -1,9 +1,7 @@
-import { Header } from "@/components/header"
-import { Hero } from "@/components/hero"
-import { PromptInput } from "@/components/ui/prompt-input"
-import { GridBackground } from "@/components/grid-background"
-
-
+import { Header } from "@/components/header";
+import { Hero } from "@/components/hero";
+import { PromptInput } from "@/components/ui/prompt-input";
+import { GridBackground } from "@/components/grid-background";
 
 export default function Home() {
   return (
@@ -12,8 +10,8 @@ export default function Home() {
       <Header />
       <div className="flex-1 flex flex-col items-center justify-center px-4 pb-24  max-w-5xl mx-auto w-full relative z-10">
         <Hero />
-        <PromptInput/>
+        <PromptInput />
       </div>
     </main>
-  )
+  );
 }

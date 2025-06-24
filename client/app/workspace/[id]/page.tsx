@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import axios from "axios";
 import { BACKEND_URL } from "@/lib/config";
 import {
@@ -13,6 +13,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ChatMessage } from "@/components/chat-message";
 import { CodeEditor } from "@/components/code-editor";
 import { FileTree } from "@/components/file-tree";
@@ -29,6 +36,7 @@ import { Step, FileItem, StepType } from "@/lib/types";
 import { parseXml } from "@/lib/parse";
 import { useWebContainer } from "@/app/hooks/useWebContainer";
 import PreviewPage from "@/app/preview/[id]/page";
+import { useApiKeyStore } from "@/store/useApiKeyStore";
 
 interface Message {
   id: string;
@@ -39,6 +47,7 @@ interface Message {
 export default function WorkspacePage() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const id = params?.id as string;
   const initialMessage = searchParams.get("message");
   const webcontainer = useWebContainer();
@@ -46,6 +55,7 @@ export default function WorkspacePage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isPreviewDisabled, setIsPreviewDisabled] = useState(false);
   const [selectedFile, setSelectedFile] = useState("");
   const [templateSteps, setTemplateSteps] = useState<Step[]>([]);
   const [generationSteps, setGenerationSteps] = useState<Step[]>([]);
@@ -66,12 +76,20 @@ export default function WorkspacePage() {
   const [llmMessages, setLlmMessages] = useState<
     { role: "user" | "assistant"; content: string }[]
   >([]);
+  const [showComingSoonModal, setShowComingSoonModal] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const initialApiCallTriggered = useRef(false);
 
   useEffect(() => {
+    const { hasApiKey } = useApiKeyStore.getState();
+    if (!hasApiKey()) {
+      router.push("/");
+      return;
+    }
+  }, [router]);
+
+  useEffect(() => {
     const processStepsToFiles = () => {
-      // Process all steps (both template and generation phases)
       const allSteps = [...templateSteps, ...generationSteps];
 
       if (allSteps.length === 0) return;
@@ -146,7 +164,6 @@ export default function WorkspacePage() {
 
       const processFile = (file: FileItem, isRootFolder: boolean) => {
         if (file.type === "folder") {
-          // For folders, create a directory entry
           mountStructure[file.name] = {
             directory: file.children
               ? Object.fromEntries(
@@ -165,7 +182,6 @@ export default function WorkspacePage() {
               },
             };
           } else {
-            // For files, create a file entry with contents
             return {
               file: {
                 contents: file.content || "",
@@ -177,7 +193,6 @@ export default function WorkspacePage() {
         return mountStructure[file.name];
       };
 
-      // Process each top-level file/folder
       files.forEach((file) => processFile(file, true));
 
       return mountStructure;
@@ -185,12 +200,10 @@ export default function WorkspacePage() {
 
     const mountStructure = createMountStructure(files);
 
-    // Mount the structure if WebContainer is available
     console.log(mountStructure);
     webcontainer?.mount(mountStructure);
   }, [files, webcontainer]);
 
-  // Auto-select first file when files are available
   useEffect(() => {
     if (files.length > 0 && !selectedFile) {
       const findFirstFile = (items: FileItem[]): string | null => {
@@ -217,21 +230,27 @@ export default function WorkspacePage() {
     async (message: string) => {
       try {
         setIsLoading(true);
+        setIsPreviewDisabled(true);
+        setActiveTab("code");
+        const { apiKey, selectedModel } = useApiKeyStore.getState();
+
+        if (!apiKey) {
+          throw new Error("API key is required");
+        }
 
         if (!templateSet) {
-          // Initial setup phase
           setCurrentPhase("template");
 
-          // Phase 1: Template Setup
           const response = await axios.post(`${BACKEND_URL}/template`, {
             prompt: message.trim(),
+            apiKey,
+            model: selectedModel,
           });
           setTemplateSet(true);
 
           const { prompts, uiPrompts } = response.data;
           console.log(prompts, uiPrompts);
 
-          // Set template steps with loading status
           const templateStepsData = parseXml(uiPrompts[0]).map((x: Step) => ({
             ...x,
             status: "in-progress" as const,
@@ -249,9 +268,7 @@ export default function WorkspacePage() {
           );
           setCurrentPhase("generation");
 
-          // Phase 2: AI Generation
           try {
-            // Add generating message for the initial setup
             const generatingMessage: Message = {
               id: `generating-setup-${Date.now()}`,
               role: "assistant",
@@ -265,6 +282,8 @@ export default function WorkspacePage() {
                 role: "user",
                 content,
               })),
+              apiKey,
+              model: selectedModel,
             });
 
             const generationStepsData = parseXml(
@@ -293,7 +312,6 @@ export default function WorkspacePage() {
               },
             ]);
 
-            // Complete generation phase
             setGenerationSteps((prev) =>
               prev.map((step) => ({
                 ...step,
@@ -302,10 +320,11 @@ export default function WorkspacePage() {
             );
             setCurrentPhase("complete");
             setInitialSetupComplete(true);
+            setIsPreviewDisabled(false);
+            setActiveTab("preview");
 
             console.log("Initial setup completed, clearing steps display");
 
-            // Extract title from first boltArtifact for the AI response
             const extractArtifactTitle = (content: string): string => {
               const match = content.match(
                 /<boltArtifact[^>]*title="([^"]*)"[^>]*>/
@@ -319,7 +338,6 @@ export default function WorkspacePage() {
               stepsResponse.data.response
             );
 
-            // Replace the generating message with the actual AI response
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.content === "Generating edits..."
@@ -331,15 +349,14 @@ export default function WorkspacePage() {
             console.error("Error in generation phase:", error);
             setCurrentPhase("complete");
             setInitialSetupComplete(true);
+            setIsPreviewDisabled(false);
           }
         } else {
-          // Subsequent chat messages - only user/AI conversation
           const newMessage = {
             role: "user" as const,
             content: message,
           };
 
-          // Add user message to chat immediately
           const userMessage: Message = {
             id: `user-${Date.now()}`,
             role: "user",
@@ -347,7 +364,6 @@ export default function WorkspacePage() {
           };
           setMessages((prev) => [...prev, userMessage]);
 
-          // Add temporary "generating" message
           const generatingMessage: Message = {
             id: `generating-${Date.now()}`,
             role: "assistant",
@@ -357,15 +373,16 @@ export default function WorkspacePage() {
 
           const stepsResponse = await axios.post(`${BACKEND_URL}/chat`, {
             messages: [...llmMessages, newMessage],
+            apiKey,
+            model: selectedModel,
           });
 
           const assistantResponse = stepsResponse.data.response;
 
-  
           const newGenerationStepsData = parseXml(assistantResponse).map(
             (x: Step) => ({
               ...x,
-              id: x.id + Date.now(), 
+              id: x.id + Date.now(),
               status: "in-progress" as const,
               phase: "generation" as const,
             })
@@ -384,7 +401,12 @@ export default function WorkspacePage() {
                   status: "completed" as const,
                 }))
               );
+              setIsPreviewDisabled(false);
+              setActiveTab("preview");
             }, 100);
+          } else {
+            setIsPreviewDisabled(false);
+            setActiveTab("preview");
           }
 
           setLlmMessages((x) => [...x, newMessage]);
@@ -396,7 +418,6 @@ export default function WorkspacePage() {
             },
           ]);
 
-          // Extract title from first boltArtifact for the AI response
           const extractArtifactTitle = (content: string): string => {
             const match = content.match(
               /<boltArtifact[^>]*title="([^"]*)"[^>]*>/
@@ -406,7 +427,6 @@ export default function WorkspacePage() {
 
           const displayContent = extractArtifactTitle(assistantResponse);
 
-          // Replace the generating message with the actual AI response
           setMessages((prev) =>
             prev.map((msg) =>
               msg.content === "Generating edits..."
@@ -425,6 +445,7 @@ export default function WorkspacePage() {
             "Sorry, there was an error processing your request. Please try again.",
         };
         setMessages((prev) => [...prev, errorMessage]);
+        setIsPreviewDisabled(false);
       } finally {
         setIsLoading(false);
       }
@@ -441,22 +462,19 @@ export default function WorkspacePage() {
       "initialApiCallTriggered.current:",
       initialApiCallTriggered.current
     );
-
-    // Only proceed if there's an initial message, the template isn't set,
-    // and this specific trigger logic hasn't run yet.
     if (initialMessage && !templateSet && !initialApiCallTriggered.current) {
       console.log(
         "Initial setup useEffect: Condition MET. Triggering initial call."
       );
-      initialApiCallTriggered.current = true; // Mark that we are triggering the call
+      initialApiCallTriggered.current = true;
 
       const userMessage: Message = {
         id: `user-initial-${Date.now()}`,
         role: "user",
         content: initialMessage,
       };
-      setMessages([userMessage]); // Add user message
-      handleBackendCall(initialMessage); // Call backend
+      setMessages([userMessage]);
+      handleBackendCall(initialMessage);
     } else {
       console.log(
         "Initial setup useEffect: Condition NOT MET or already triggered."
@@ -467,8 +485,6 @@ export default function WorkspacePage() {
         initialApiCallTriggered.current &&
         !(initialMessage && !templateSet)
       ) {
-        // This log is for when the effect runs again after the initial trigger,
-        // and the main conditions (initialMessage && !templateSet) are no longer met.
         console.log(
           "Reason: Initial call already triggered and conditions no longer meet for a new trigger."
         );
@@ -491,7 +507,6 @@ export default function WorkspacePage() {
     }));
   };
 
-  // Get file content from the files state
   const getFileContent = (filePath: string): string => {
     const findFile = (
       items: FileItem[],
@@ -538,14 +553,7 @@ export default function WorkspacePage() {
               variant="ghost"
               size="sm"
               className="gap-2 text-gray-400 hover:text-white hover:bg-[#0a0a0a]"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Regenerate
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="gap-2 text-gray-400 hover:text-white hover:bg-[#0a0a0a]"
+              onClick={() => setShowComingSoonModal(true)}
             >
               <Download className="h-4 w-4" />
               Download
@@ -554,14 +562,16 @@ export default function WorkspacePage() {
               variant="ghost"
               size="sm"
               className="gap-2 text-gray-400 hover:text-white hover:bg-[#0a0a0a]"
+              onClick={() => setShowComingSoonModal(true)}
             >
               <Github className="h-4 w-4" />
               GitHub
             </Button>
             <div className="h-6 w-px bg-gray-700" />
-            <Button 
+            <Button
               size="sm"
               className="gap-2 bg-white text-black hover:bg-gray-200 font-medium"
+              onClick={() => setShowComingSoonModal(true)}
             >
               <ExternalLink className="h-4 w-4" />
               Deploy
@@ -586,7 +596,6 @@ export default function WorkspacePage() {
                     />
                   ))}
 
-                  {/* Show loading indicator when AI is processing */}
                   {isLoading && !initialSetupComplete && (
                     <div className="flex items-center justify-center py-8">
                       <div className="flex items-center gap-3 text-gray-400">
@@ -647,7 +656,8 @@ export default function WorkspacePage() {
                 <TabsList className="h-14 bg-transparent">
                   <TabsTrigger
                     value="preview"
-                    className="data-[state=active]:bg-[#0a0a0a] data-[state=active]:text-white text-gray-400 hover:text-white"
+                    disabled={isPreviewDisabled}
+                    className="data-[state=active]:bg-[#0a0a0a] data-[state=active]:text-white text-gray-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-gray-400"
                   >
                     Preview
                   </TabsTrigger>
@@ -661,7 +671,16 @@ export default function WorkspacePage() {
               </div>
 
               <TabsContent value="preview" className="flex-1 p-0 m-0">
-                {webcontainer ? (
+                {isPreviewDisabled ? (
+                  <div className="flex items-center justify-center h-full bg-[#0a0a0a]">
+                    <div className="flex items-center gap-3 text-gray-400">
+                      <RefreshCw className="h-5 w-5 animate-spin" />
+                      <span className="text-sm">
+                        Generating project updates...
+                      </span>
+                    </div>
+                  </div>
+                ) : webcontainer ? (
                   <PreviewPage webContainer={webcontainer} files={files} />
                 ) : (
                   <div className="flex items-center justify-center h-full bg-[#0a0a0a]">
@@ -715,6 +734,24 @@ export default function WorkspacePage() {
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
+
+      <Dialog open={showComingSoonModal} onOpenChange={setShowComingSoonModal}>
+        <DialogContent className="sm:max-w-md bg-[#0a0a0a] border-gray-800 [&>button]:text-gray-400 [&>button]:hover:text-white [&>button]:hover:bg-gray-800">
+          <DialogHeader>
+            <DialogTitle className="text-white text-center">
+              🚀 Coming Soon!
+            </DialogTitle>
+            <DialogDescription className="text-center py-4 text-gray-300">
+              This feature is currently under development and will be available
+              soon.
+              <br />
+              <span className="text-sm text-gray-400 mt-2 block">
+                Stay tuned for updates!
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
