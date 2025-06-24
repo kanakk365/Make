@@ -14,7 +14,7 @@ export function Header() {
     <header className="w-full backdrop-blur-md sticky top-0 z-50">
       <div className=" mx-auto px-6 flex h-16 items-center justify-between ">
         <Link href="/" className="flex items-center gap-3">
-          <span className="text-2xl font-bold text-white">Make.it</span>
+          <span className="text-2xl font-bold text-white">Doc.ai</span>
           
         </Link>
         <Dialog>
