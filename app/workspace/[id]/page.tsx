@@ -584,8 +584,8 @@ export default function WorkspacePage() {
         <ResizablePanelGroup direction="horizontal">
           <ResizablePanel defaultSize={30} minSize={20}>
             <div className="flex flex-col h-full border-r border-gray-800 bg-[#0f0f10]">
-              <ScrollArea className="flex-1 p-4 max-h-full overflow-auto">
-                <div className="space-y-4">
+              <ScrollArea className="flex-1 py-4 pl-4 max-h-full overflow-auto">
+                <div className="space-y-4 sm:w-[60%] ">
                   {messages.map((message) => (
                     <ChatMessage
                       key={message.id}
