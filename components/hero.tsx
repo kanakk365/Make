@@ -9,7 +9,7 @@ export function Hero() {
         What do you want to build?
       </h1>
       <p className="text-lg text-gray-400 max-w-2xl mx-auto">
-        Prompt, run, edit, and deploy full-stack <span className="text-white font-medium">web</span>{" "}
+        Prompt, make, run, and edit <span className="text-white font-medium">web</span>{" "}
         apps.
       </p>
     </div>
