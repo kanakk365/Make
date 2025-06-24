@@ -21,8 +21,8 @@ export function ChatMessage({ message, templateSteps = [], generationSteps = [],
         className={cn(
           "rounded-xl px-4 py-3 max-w-[80%] text-sm",
           message.role === "user" 
-            ? "bg-white text-black" 
-            : "bg-[#0f0f10] text-white border border-gray-800",
+            ? "bg-[#0f0f10] text-white border border-gray-800" 
+            : " bg-white text-black  ",
         )}
       >
         <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>

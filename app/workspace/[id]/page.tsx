@@ -35,7 +35,7 @@ import Link from "next/link";
 import { Step, FileItem, StepType } from "@/lib/types";
 import { parseXml } from "@/lib/parse";
 import { useWebContainer } from "@/app/hooks/useWebContainer";
-import PreviewPage from "@/app/preview/[id]/page";
+import { PreviewContainer } from "@/components/preview-container";
 import { useApiKeyStore } from "@/store/useApiKeyStore";
 
 interface Message {
@@ -681,7 +681,7 @@ export default function WorkspacePage() {
                     </div>
                   </div>
                 ) : webcontainer ? (
-                  <PreviewPage webContainer={webcontainer} files={files} />
+                  <PreviewContainer webContainer={webcontainer} files={files} />
                 ) : (
                   <div className="flex items-center justify-center h-full bg-[#0a0a0a]">
                     <p className="text-gray-400">Loading web container...</p>

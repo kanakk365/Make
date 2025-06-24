@@ -1,18 +1,12 @@
-import { WebContainer } from "@webcontainer/api";
-import { useEffect, useState } from "react";
+"use client"
+import { useWebContainer } from "@/app/hooks/useWebContainer";
+import { useEffect, useState, useCallback } from "react";
 
-interface PreveiwFrameProps {
-  files: any[];
-  webContainer: WebContainer;
-}
-
-export default function PreviewPage({
-  webContainer,
-  files,
-}: PreveiwFrameProps) {
+export default function PreviewPage() {
+  const webContainer = useWebContainer();
   const [url, setUrl] = useState("");
 
-  async function start() {
+  const start = useCallback(async () => {
      console.log(webContainer);
     if (!webContainer) {
       console.error("WebContainer not initialized");
@@ -56,10 +50,11 @@ export default function PreviewPage({
     devProcess.exit.then(code => {
       console.log(`Dev server process exited with code ${code}`);
     });
-  }
+  }, [webContainer]);
+  
   useEffect(() => {
     start();
-  }, []);
+  }, [start]);
   
 
   return (

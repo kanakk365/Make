@@ -255,7 +255,7 @@ export function PromptInput() {
               >
                 <ArrowUpIcon
                   className={cn(
-                    "w-4 h-4",
+                    "w-4 h-4 cursor-pointer ",
                     value.trim() && !isGenerating
                       ? "text-black"
                       : "text-zinc-400"
